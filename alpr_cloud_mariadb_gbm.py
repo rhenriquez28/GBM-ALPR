@@ -11,7 +11,31 @@ load_dotenv()
 mariadb_connection = mariadb.connect(host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"), password=os.getenv("DB_PASSWORD"), database=os.getenv("MARIA_DB_NAME"), port=os.getenv("DB_PORT"))
 cursor = mariadb_connection.cursor()
 
-STATUS = True
+
+def jsonToDict(jsonStr):
+    return json.loads(json.dumps(jsonStr))
+
+def queryStrBuilder(plates):
+    platesLength = len(plates)
+    plateQueryStr = ""
+    i = 1
+    for plate in plates:
+        if i == platesLength:
+            plateQueryStr += "'" + plate + "'"
+        else:
+            plateQueryStr += "'" + plate + "', "
+        i += 1
+    return plateQueryStr
+
+def dbCheck(plates):
+    cursor.execute("SELECT * FROM placas WHERE placa IN ({})".format(queryStrBuilder(plates)))
+    records = cursor.fetchall()
+    if records:
+        for row in records:
+            if row[5] == "Sospechoso":
+                print("El auto con numero de placa {} es sospechoso".format(row[1]))
+            else:
+                print("El auto con numero de placa {} es no sospechoso".format(row[1]))
 
 def imgProc(frame):
     frame_im = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -22,17 +46,6 @@ def imgProc(frame):
     img_for_post = stream.read()
     img_base64 = base64.b64encode(img_for_post)
     return img_base64
-
-def dbCheck(plates):
-    for plate in plates:
-        cursor.execute("SELECT * FROM placas WHERE placa='{}'".format(plate))
-        records = cursor.fetchall()
-        if records:
-            for row in records:
-                if row[5] == "Sospechoso":
-                    print("El auto con numero de placa {} es sospechoso".format(plate))
-                else:
-                    print("El auto con numero de placa {} es no sospechoso".format(plate))
 
 def resultsFilter(results):
     i = 0
@@ -52,6 +65,7 @@ def resultsCheck(results):
     else:
         pass
 
+STATUS = True
 cap = cv2.VideoCapture(os.getenv("VIDEO_PATH"))
 OPENALPR_SECRET_KEY = os.getenv("OPENALPR_SECRET_KEY")
 while STATUS == True:
@@ -59,7 +73,7 @@ while STATUS == True:
     # openALPR API part
     url = 'https://api.openalpr.com/v2/recognize_bytes?recognize_vehicle=1&country=us&secret_key=%s' % (OPENALPR_SECRET_KEY)
     r = requests.post(url, data = imgProc(frame))
-    results = json.loads(json.dumps(r.json()))
+    results = jsonToDict(r.json())
     resultsCheck(results)
     
 cap.release()

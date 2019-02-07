@@ -15,18 +15,27 @@ if not alpr.is_loaded():
 mariadb_connection = mariadb.connect(host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"), password=os.getenv("DB_PASSWORD"), database=os.getenv("MARIA_DB_NAME"), port=os.getenv("DB_PORT"))
 cursor = mariadb_connection.cursor()
 
-STATUS = True
+def queryStrBuilder(plates):
+    platesLength = len(plates)
+    plateQueryStr = ""
+    i = 1
+    for plate in plates:
+        if i == platesLength:
+            plateQueryStr += "'" + plate + "'"
+        else:
+            plateQueryStr += "'" + plate + "', "
+        i += 1
+    return plateQueryStr
 
 def dbCheck(plates):
-    for plate in plates:
-        cursor.execute("SELECT * FROM placas WHERE placa='{}'".format(plate))
-        records = cursor.fetchall()
-        if records:
-            for row in records:
-                if row[5] == "Sospechoso":
-                    print("El auto con numero de placa {} es sospechoso".format(plate))
-                else:
-                    print("El auto con numero de placa {} es no sospechoso".format(plate))
+    cursor.execute("SELECT * FROM placas WHERE placa IN ({})".format(queryStrBuilder(plates)))
+    records = cursor.fetchall()
+    if records:
+        for row in records:
+            if row[5] == "Sospechoso":
+                print("El auto con numero de placa {} es sospechoso".format(row[1]))
+            else:
+                print("El auto con numero de placa {} es no sospechoso".format(row[1]))
 
 def resultsFilter(results):
     i = 0
@@ -40,17 +49,17 @@ def resultsFilter(results):
                 plates.append(plate['plate'])
     dbCheck(plates)
 
-
 def resultsCheck(results):
     if results['results']:
         resultsFilter(results)
     else:
         pass
 
+STATUS = True
 cap = cv2.VideoCapture(os.getenv("VIDEO_PATH"))
 while STATUS == True:
     STATUS, frame = cap.read()
-    # openALPR API part
+    # openALPR Library part
     results = alpr.recognize_ndarray(frame)
     resultsCheck(results)
     
