@@ -1,17 +1,14 @@
 #Time: 4s - 5s
-import requests, base64, json, cv2
+import requests, base64, json, cv2, os
 from PIL import Image
 from six import BytesIO
 import mysql.connector as mariadb
+from dotenv import load_dotenv
 
-#Global variables
-#Aqui se especifica donde esta el video
-VIDEO_PATH = "/home/roy/Escritorio/noche.mp4" 
-#Aqui se inserta el secret key de la cuenta de openALPR
-SECRET_KEY = 'sk_12e99fca9917be1d82b94ad6'
+load_dotenv()
 
 #mariadb setup
-mariadb_connection = mariadb.connect(host="localhost", user='py', password='GBM.net', database='placasTest', port=3306)
+mariadb_connection = mariadb.connect(host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"), password=os.getenv("DB_PASSWORD"), database=os.getenv("MARIA_DB_NAME"), port=os.getenv("DB_PORT"))
 cursor = mariadb_connection.cursor()
 
 STATUS = True
@@ -55,11 +52,12 @@ def resultsCheck(results):
     else:
         pass
 
-cap = cv2.VideoCapture(VIDEO_PATH)
+cap = cv2.VideoCapture(os.getenv("VIDEO_PATH"))
+OPENALPR_SECRET_KEY = os.getenv("OPENALPR_SECRET_KEY")
 while STATUS == True:
     STATUS, frame = cap.read()
     # openALPR API part
-    url = 'https://api.openalpr.com/v2/recognize_bytes?recognize_vehicle=1&country=us&secret_key=%s' % (SECRET_KEY)
+    url = 'https://api.openalpr.com/v2/recognize_bytes?recognize_vehicle=1&country=us&secret_key=%s' % (OPENALPR_SECRET_KEY)
     r = requests.post(url, data = imgProc(frame))
     results = json.loads(json.dumps(r.json()))
     resultsCheck(results)

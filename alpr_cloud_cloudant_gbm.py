@@ -1,25 +1,25 @@
 #Time: 4s - 5s
-import requests, base64, json, cv2
+import requests, base64, json, cv2, os
+from dotenv import load_dotenv
 from PIL import Image
 from six import BytesIO
 #Conectar con una instancia de servicio de IBM Cloudant en IBM Cloud
 from cloudant.client import Cloudant
 from cloudant.error import CloudantException
 from cloudant.result import Result, ResultByKey
-
 #import Document
 
+load_dotenv()
+
 #aquí se ponen las credenciales de servicio de la DB
-serviceUsername = "1b96e952-903c-4a27-be0c-b3a7111b75f2-bluemix"
-servicePassword = "f1600c6ac69c32709af55045edaeea9fad1c3f778f4c28b116d2dd4f7cd8456b"
-serviceURL = "https://1b96e952-903c-4a27-be0c-b3a7111b75f2-bluemix:f1600c6ac69c32709af55045edaeea9fad1c3f778f4c28b116d2dd4f7cd8456b@1b96e952-903c-4a27-be0c-b3a7111b75f2-bluemix.cloudant.com"
+serviceURL = os.getenv("SERVICE_URL")
 
 #establecer una conexión con la instancia de servicio
-client = Cloudant(serviceUsername, servicePassword, url=serviceURL)
+client = Cloudant(os.getenv("SERVICE_USERNAME"), os.getenv("SERVICE_PASSWORD"), url=serviceURL)
 client.connect()
 
 #crear una base de datos dentro de la instancia de servicio
-databaseName = "databasedemo"
+databaseName = os.getenv("CLOUDANT_DB_NAME")
 #myDatabaseDemo = client.create_database(databaseName)
 #if myDatabaseDemo.exists():
 #    print (""{0}" successfully created.\n".format(databaseName))
@@ -57,14 +57,6 @@ def comparePlate(comPlate):
         i+=1 
     return sospechoso
 
-
-
-#Global variables
-#Aqui se especifica donde esta el video
-VIDEO_PATH = "C:/Users/kkantule/Videos/proyectos/matricula/video/noche.mp4" 
-#Aqui se inserta el secret key de la cuenta de openALPR
-SECRET_KEY = "sk_06c07f8736010251b5372ec1"
-
 STATUS = True
 
 def imgProc(frame):
@@ -94,11 +86,12 @@ def resultsCheck(results):
     else:
         pass
 
-cap = cv2.VideoCapture(VIDEO_PATH)
+cap = cv2.VideoCapture(os.getenv("VIDEO_PATH"))
+OPENALPR_SECRET_KEY = os.getenv("OPENALPR_SECRET_KEY")
 while STATUS == True:
     STATUS, frame = cap.read()
     # openALPR API part
-    url = "https://api.openalpr.com/v2/recognize_bytes?recognize_vehicle=1&country=us&secret_key=%s" % (SECRET_KEY)
+    url = "https://api.openalpr.com/v2/recognize_bytes?recognize_vehicle=1&country=us&secret_key=%s" % (OPENALPR_SECRET_KEY)
     r = requests.post(url, data = imgProc(frame))
     results = json.loads(json.dumps(r.json()))
     resultsCheck(results)

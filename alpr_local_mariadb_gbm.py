@@ -1,25 +1,18 @@
 from openalpr import Alpr
-import cv2
-import sys
+import cv2, sys, os
 import mysql.connector as mariadb
+from dotenv import load_dotenv
 
-# Global variables
-#Aqui se especifica donde esta el video
-VIDEO_PATH = "/home/roy/Escritorio/noche.mp4"
-OPENALPR_CONFIG_FILE = '/etc/openalpr/openalpr.conf'
-OPENALPR_RUNTIME_DATA_DIR = '/home/roy/openalpr/runtime_data/'
-
-cap = cv2.VideoCapture(VIDEO_PATH)
-ret, frame = cap.read()
+load_dotenv()
 
 # openALPR library part
-alpr = Alpr("us", OPENALPR_CONFIG_FILE, OPENALPR_RUNTIME_DATA_DIR)
+alpr = Alpr("us", os.getenv("OPENALPR_CONFIG_FILE"), os.getenv("OPENALPR_RUNTIME_DATA_DIR"))
 if not alpr.is_loaded():
     print("Error loading OpenALPR")
     sys.exit(1)
 
 #mariadb setup
-mariadb_connection = mariadb.connect(host="localhost", user='py', password='GBM.net', database='placasTest', port=3306)
+mariadb_connection = mariadb.connect(host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"), password=os.getenv("DB_PASSWORD"), database=os.getenv("MARIA_DB_NAME"), port=os.getenv("DB_PORT"))
 cursor = mariadb_connection.cursor()
 
 STATUS = True
@@ -54,7 +47,7 @@ def resultsCheck(results):
     else:
         pass
 
-cap = cv2.VideoCapture(VIDEO_PATH)
+cap = cv2.VideoCapture(os.getenv("VIDEO_PATH"))
 while STATUS == True:
     STATUS, frame = cap.read()
     # openALPR API part

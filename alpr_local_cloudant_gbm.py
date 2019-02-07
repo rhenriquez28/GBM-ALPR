@@ -1,23 +1,21 @@
 from openalpr import Alpr
-import cv2
-import sys
-
+import cv2, sys, os
+from dotenv import load_dotenv
 #Conectar con una instancia de servicio de IBM Cloudant en IBM Cloud
 from cloudant.client import Cloudant
 from cloudant.error import CloudantException
 from cloudant.result import Result, ResultByKey
 
+load_dotenv()
 #aquí se ponen las credenciales de servicio de la DB
-serviceUsername = "user_name"
-servicePassword = "password"
-serviceURL = "URL"
+serviceURL = os.getenv("SERVICE_URL")
 
 #establecer una conexión con la instancia de servicio
-client = Cloudant(serviceUsername, servicePassword, url=serviceURL)
+client = Cloudant(os.getenv("SERVICE_USERNAME"), os.getenv("SERVICE_PASSWORD"), url=serviceURL)
 client.connect()
 
 #crear una base de datos dentro de la instancia de servicio
-databaseName = "databasedemo"
+databaseName = os.getenv("CLOUDANT_DB_NAME")
 #myDatabaseDemo = client.create_database(databaseName)
 #if myDatabaseDemo.exists():
 #    print (""{0}" successfully created.\n".format(databaseName))
@@ -51,17 +49,8 @@ def comparePlate(comPlate):
         i+=1 
     return sospechoso
 
-# Global variables
-#Aqui se especifica donde esta el video
-VIDEO_PATH = "/home/roy/Desktop/noche.mp4"
-OPENALPR_CONFIG_FILE = '/etc/openalpr/openalpr.conf'
-OPENALPR_RUNTIME_DATA_DIR = '/home/roy/openalpr/runtime_data/'
-
-cap = cv2.VideoCapture(VIDEO_PATH)
-ret, frame = cap.read()
-
 # openALPR library part
-alpr = Alpr("us", OPENALPR_CONFIG_FILE, OPENALPR_RUNTIME_DATA_DIR)
+alpr = Alpr("us", os.getenv("OPENALPR_CONFIG_FILE"), os.getenv("OPENALPR_RUNTIME_DATA_DIR"))
 if not alpr.is_loaded():
     print("Error loading OpenALPR")
     sys.exit(1)
@@ -83,7 +72,7 @@ def resultsCheck(results):
     else:
         pass
 
-cap = cv2.VideoCapture(VIDEO_PATH)
+cap = cv2.VideoCapture(os.getenv("VIDEO_PATH"))
 while STATUS == True:
     STATUS, frame = cap.read()
     # openALPR API part
