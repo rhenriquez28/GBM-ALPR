@@ -63,16 +63,16 @@ def resultsCheck(results):
     else:
         pass
 
-STATUS = True
-cap = cv2.VideoCapture(os.getenv("VIDEO_PATH"))
-while STATUS == True:
-    STATUS, frame = cap.read()
-    # openALPR Library part
-    results = alpr.recognize_ndarray(frame)
-    resultsCheck(results)
-
-alpr.unload()
-mariadb_connection.close()
-cap.release()
-cv2.destroyAllWindows()
+if __name__ == "__main__":
+    cap = cv2.VideoCapture(os.getenv("VIDEO_PATH"))
+    STATUS = True
+    while STATUS == True:
+        STATUS, frame = cap.read()
+        # openALPR Library part
+        results = alpr.recognize_ndarray(frame)
+        resultsCheck(results)
+    alpr.unload()
+    mariadb_connection.close()
+    cap.release()
+    cv2.destroyAllWindows()
 

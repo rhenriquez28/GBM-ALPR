@@ -69,16 +69,17 @@ def resultsCheck(results):
     else:
         pass
 
-STATUS = True
-cap = cv2.VideoCapture(os.getenv("VIDEO_PATH"))
-OPENALPR_SECRET_KEY = os.getenv("OPENALPR_SECRET_KEY")
-while STATUS == True:
-    STATUS, frame = cap.read()
-    # openALPR API part
-    url = 'https://api.openalpr.com/v2/recognize_bytes?recognize_vehicle=1&country=us&secret_key=%s' % (OPENALPR_SECRET_KEY)
-    r = requests.post(url, data = imgProc(frame))
-    results = jsonToDict(r.json())
-    resultsCheck(results)
-mariadb_connection.close()
-cap.release()
-cv2.destroyAllWindows()
+if __name__ == "__main__":
+    cap = cv2.VideoCapture(os.getenv("VIDEO_PATH"))
+    OPENALPR_SECRET_KEY = os.getenv("OPENALPR_SECRET_KEY")
+    STATUS = True
+    while STATUS == True:
+        STATUS, frame = cap.read()
+        # openALPR API part
+        url = "https://api.openalpr.com/v2/recognize_bytes?recognize_vehicle=1&country=us&secret_key=%s" % (OPENALPR_SECRET_KEY)
+        r = requests.post(url, data = imgProc(frame))
+        results = jsonToDict(r.json())
+        resultsCheck(results)
+    mariadb_connection.close()
+    cap.release()
+    cv2.destroyAllWindows()
