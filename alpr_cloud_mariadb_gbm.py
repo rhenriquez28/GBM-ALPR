@@ -3,14 +3,17 @@ import requests, base64, json, cv2, os
 from PIL import Image
 from six import BytesIO
 import mysql.connector as mariadb
+from contextlib import closing
 from dotenv import load_dotenv
 
 load_dotenv()
 
 #mariadb setup
-mariadb_connection = mariadb.connect(host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"), password=os.getenv("DB_PASSWORD"), database=os.getenv("MARIA_DB_NAME"), port=os.getenv("DB_PORT"))
-cursor = mariadb_connection.cursor()
-
+mariadb_connection = mariadb.connect(host=os.getenv("DB_HOST"),
+                                    user=os.getenv("DB_USER"), 
+                                    password=os.getenv("DB_PASSWORD"), 
+                                    database=os.getenv("MARIA_DB_NAME"), 
+                                    port=os.getenv("DB_PORT"))
 
 def jsonToDict(jsonStr):
     return json.loads(json.dumps(jsonStr))
@@ -28,8 +31,9 @@ def queryStrBuilder(plates):
     return plateQueryStr
 
 def dbCheck(plates):
-    cursor.execute("SELECT * FROM placas WHERE placa IN ({})".format(queryStrBuilder(plates)))
-    records = cursor.fetchall()
+    with closing(mariadb_connection.cursor()) as cursor:    
+        cursor.execute("SELECT * FROM placas WHERE placa IN ({})".format(queryStrBuilder(plates)))
+        records = cursor.fetchall()
     if records:
         for row in records:
             if row[5] == "Sospechoso":
@@ -75,6 +79,6 @@ while STATUS == True:
     r = requests.post(url, data = imgProc(frame))
     results = jsonToDict(r.json())
     resultsCheck(results)
-    
+mariadb_connection.close()
 cap.release()
 cv2.destroyAllWindows()

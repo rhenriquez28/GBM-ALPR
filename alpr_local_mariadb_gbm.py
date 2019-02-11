@@ -1,6 +1,7 @@
 from openalpr import Alpr
 import cv2, sys, os
 import mysql.connector as mariadb
+from contextlib import closing
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -12,8 +13,11 @@ if not alpr.is_loaded():
     sys.exit(1)
 
 #mariadb setup
-mariadb_connection = mariadb.connect(host=os.getenv("DB_HOST"), user=os.getenv("DB_USER"), password=os.getenv("DB_PASSWORD"), database=os.getenv("MARIA_DB_NAME"), port=os.getenv("DB_PORT"))
-cursor = mariadb_connection.cursor()
+mariadb_connection = mariadb.connect(host=os.getenv("DB_HOST"),
+                                     user=os.getenv("DB_USER"),
+                                     password=os.getenv("DB_PASSWORD"),
+                                     database=os.getenv("MARIA_DB_NAME"),
+                                     port=os.getenv("DB_PORT"))
 
 def queryStrBuilder(plates):
     platesLength = len(plates)
@@ -28,14 +32,18 @@ def queryStrBuilder(plates):
     return plateQueryStr
 
 def dbCheck(plates):
-    cursor.execute("SELECT * FROM placas WHERE placa IN ({})".format(queryStrBuilder(plates)))
-    records = cursor.fetchall()
+    with closing(mariadb_connection.cursor()) as cursor:
+        cursor.execute(
+            "SELECT * FROM placas WHERE placa IN ({})".format(queryStrBuilder(plates)))
+        records = cursor.fetchall()
     if records:
         for row in records:
             if row[5] == "Sospechoso":
-                print("El auto con numero de placa {} es sospechoso".format(row[1]))
+                print(
+                    "El auto con numero de placa {} es sospechoso".format(row[1]))
             else:
-                print("El auto con numero de placa {} es no sospechoso".format(row[1]))
+                print(
+                    "El auto con numero de placa {} es no sospechoso".format(row[1]))
 
 def resultsFilter(results):
     i = 0
@@ -62,8 +70,9 @@ while STATUS == True:
     # openALPR Library part
     results = alpr.recognize_ndarray(frame)
     resultsCheck(results)
-    
+
 alpr.unload()
+mariadb_connection.close()
 cap.release()
 cv2.destroyAllWindows()
 
