@@ -56,7 +56,8 @@ def resultsFilter(results):
             else:
                 #print("Plate #%d" % i + ": " + str(plate['plate']) + " " + str(plate['confidence']))
                 plates.append(plate['plate'])
-    dbCheck(plates)
+    if plates:
+        dbCheck(plates)
 
 def resultsCheck(results):
     if results["results"]:
