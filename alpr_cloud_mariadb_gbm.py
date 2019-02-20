@@ -28,7 +28,6 @@ def queryStrBuilder(plates):
         else:
             plateQueryStr += "'" + plate + "', "
         i += 1
-    print (plateQueryStr)
     return plateQueryStr
 
 def dbCheck(plates):
