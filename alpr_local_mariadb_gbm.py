@@ -6,8 +6,12 @@ import PIL.Image, PIL.ImageTk
 import mysql.connector as mariadb
 from contextlib import closing
 from dotenv import load_dotenv
+import asyncio
+import threading
 
 load_dotenv()
+
+#FRAME = None
 
 class App:
     def __init__(self, window, window_title, video_source):
@@ -22,28 +26,53 @@ class App:
         # open video source
         self.vid = MyVideoCapture(video_source)
 
+        self.ret = None
+        self.frame = None
+        self.tasks_status = True
+        self.result_text = tkinter.StringVar()
+        # After it is called once, the update method will be automatically called every delay milliseconds
+        self.delay = 1
+        self.async_loop = asyncio.get_event_loop()
+
         # Create a canvas that can fit the above video source size
         self.canvas = tkinter.Canvas(window, width = 960, height = 540, bg = "black")
         self.canvas.pack()
-
-        #startBtn = tkinter.Button(top, bg = "green", text = "Start", command = start)
-        #stopBtn = tkinter.Button(top, bg = "red", text = "Stop", command = stop)
-
-        # After it is called once, the update method will be automatically called every delay milliseconds
-        self.delay = 15
-        self.update()
+        self.text = tkinter.Label(window, textvariable = self.result_text).pack()
+        self.start_btn = tkinter.Button(window, bg = "green", text = "Start", command = lambda:self.do_tasks()).pack()
+        self.stop_btn = tkinter.Button(window, bg = "red", text = "Stop").pack()
 
         self.window.mainloop()
     
-    def update(self):
+    def _asyncio_thread(self):
+        self.async_loop.run_until_complete(self.do_alpr())
+
+    def do_tasks(self):
+        self.update_video()
+        """ Button-Event-Handler starting the asyncio part. """
+        threading.Thread(target=self._asyncio_thread).start()
+
+    async def do_alpr(self):
+        while self.tasks_status:
+            await self.update_result()
+    
+    def update_video(self):
         # Get a frame from the video source
-        ret, frame = self.vid.get_frame()
-        resized_frame = cv2.resize(frame, None, fx = 0.5, fy = 0.5, interpolation = cv2.INTER_LINEAR)
-        if ret:
+        #global FRAME
+        self.ret, self.frame = self.vid.get_frame()
+        resized_frame = cv2.resize(self.frame, None, fx = 0.5, fy = 0.5, interpolation = cv2.INTER_LINEAR)
+        if self.ret:
             self.photo = PIL.ImageTk.PhotoImage(image = PIL.Image.fromarray(resized_frame))
             self.canvas.create_image(0, 0, image = self.photo, anchor = tkinter.NW)
+            #await asyncio.sleep(1)
         
-        self.window.after(self.delay, self.update)
+        self.window.after(self.delay, self.update_video)
+    
+    async def update_result(self):
+        #ret, frame = self.vid.get_frame()
+        # Return a boolean success flag and the current frame converted to BGR
+        if self.ret:
+            results = self.alpr.recognize_plate(self.frame)
+            self.result_text.set(self.db.results_check(results))
     
     #def start(self):
         # open video source
@@ -81,9 +110,6 @@ class MyVideoCapture:
         if self.vid.isOpened():
             ret, frame = self.vid.read()
             if ret:
-                # Return a boolean success flag and the current frame converted to BGR
-                results = self.alpr.recognize_plate(frame)
-                self.db.results_check(results)
                 return (ret, cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
             else:
                 return (ret, None)
@@ -136,11 +162,9 @@ class DB:
         if records:
             for row in records:
                 if row[5] == "Sospechoso":
-                    print(
-                        "El auto con numero de placa {} es sospechoso".format(row[1]))
+                    return "El auto con numero de placa {} es sospechoso".format(row[1])
                 else:
-                    print(
-                        "El auto con numero de placa {} es no sospechoso".format(row[1]))
+                    return "El auto con numero de placa {} es no sospechoso".format(row[1])
 
     def results_filter(self, results):
         i = 0
@@ -152,11 +176,11 @@ class DB:
                 else:
                     #print("Plate #%d" % i + ": " + str(plate['plate']) + " " + str(plate['confidence']))
                     plates.append(plate['plate'])
-        self.db_check(plates)
+        return self.db_check(plates)
 
     def results_check(self, results):
         if results['results']:
-            self.results_filter(results)
+            return self.results_filter(results)
         else:
             pass
     
