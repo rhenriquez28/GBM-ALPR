@@ -1,17 +1,16 @@
 import tkinter
 from openalpr import Alpr
 import cv2, sys, os
-# To use ImageTk you eed to run dnf install python3-pillow-tk or apt-get install python3-pil.imagetk
+# To use ImageTk you need to run dnf install python3-pillow-tk or apt-get install python3-pil.imagetk
 import PIL.Image, PIL.ImageTk
 import mysql.connector as mariadb
 from contextlib import closing
 from dotenv import load_dotenv
 import asyncio
 import threading
+import time
 
 load_dotenv()
-
-#FRAME = None
 
 class App:
     def __init__(self, window, window_title, video_source):
@@ -28,7 +27,9 @@ class App:
 
         self.ret = None
         self.frame = None
-        self.tasks_status = True
+        self.video_status = True
+        self.alpr_status = True
+        self.alpr_thread = None
         self.result_text = tkinter.StringVar()
         # After it is called once, the update method will be automatically called every delay milliseconds
         self.delay = 1
@@ -38,53 +39,63 @@ class App:
         self.canvas = tkinter.Canvas(window, width = 960, height = 540, bg = "black")
         self.canvas.pack()
         self.text = tkinter.Label(window, textvariable = self.result_text).pack()
-        self.start_btn = tkinter.Button(window, bg = "green", text = "Start", command = lambda:self.do_tasks()).pack()
-        self.stop_btn = tkinter.Button(window, bg = "red", text = "Stop").pack()
+        self.start_btn = tkinter.Button(window, bg = "green", text = "Start", command = lambda:self.start_tasks()).pack()
+        self.stop_btn = tkinter.Button(window, bg = "red", text = "Stop", command = lambda:self.stop_tasks()).pack()
 
         self.window.mainloop()
     
+    def stop_tasks(self):
+        self.alpr_status = False
+        if self.async_loop.is_running():
+            self.async_loop.stop()
+        '''
+        if not self.alpr_thread.is_alive():
+            print("El thread se murio")
+        '''
+        #self.alpr_thread.join()
+        self.video_status = False
+        self.canvas.delete("all")
+        
+
     def _asyncio_thread(self):
         self.async_loop.run_until_complete(self.do_alpr())
 
-    def do_tasks(self):
+    def start_tasks(self):
+        self.video_status = True
+        self.alpr_status = True
         self.update_video()
         """ Button-Event-Handler starting the asyncio part. """
-        threading.Thread(target=self._asyncio_thread).start()
+        self.alpr_thread = threading.Thread(target=self._asyncio_thread)
+        self.alpr_thread.daemon = True
+        self.alpr_thread.start()
 
     async def do_alpr(self):
-        while self.tasks_status:
+        while self.alpr_status and self.video_status:
             await self.update_result()
     
     def update_video(self):
         # Get a frame from the video source
-        #global FRAME
         self.ret, self.frame = self.vid.get_frame()
-        resized_frame = cv2.resize(self.frame, None, fx = 0.5, fy = 0.5, interpolation = cv2.INTER_LINEAR)
         if self.ret:
+            resized_frame = cv2.resize(self.frame, None, fx = 0.5, fy = 0.5, interpolation = cv2.INTER_LINEAR)
             self.photo = PIL.ImageTk.PhotoImage(image = PIL.Image.fromarray(resized_frame))
             self.canvas.create_image(0, 0, image = self.photo, anchor = tkinter.NW)
-            #await asyncio.sleep(1)
-        
-        self.window.after(self.delay, self.update_video)
+        else:
+            self.video_status = False
+
+        if self.video_status:
+            self.window.after(self.delay, self.update_video)
     
     async def update_result(self):
-        #ret, frame = self.vid.get_frame()
         # Return a boolean success flag and the current frame converted to BGR
         if self.ret:
             results = self.alpr.recognize_plate(self.frame)
-            self.result_text.set(self.db.results_check(results))
-    
-    #def start(self):
-        # open video source
-        #self.vid = MyVideoCapture(video_source)
-        #self.alpr = ALPR()
-        #self.db = DB()
-        # After it is called once, the update method will be automatically called every delay milliseconds
-        #self.delay = 15
-        #self.update()
-    
-    #def stop(self):
-
+            alerts = self.db.results_check(results)
+            if alerts != None:
+                for alert in alerts:
+                    self.result_text.set(alert)
+            else:
+                self.result_text.set("")
 
 class MyVideoCapture:
     def __init__(self, video_source):
@@ -97,14 +108,10 @@ class MyVideoCapture:
         self.width = self.vid.get(cv2.CAP_PROP_FRAME_WIDTH)
         self.height = self.vid.get(cv2.CAP_PROP_FRAME_HEIGHT)
 
-        self.alpr = ALPR()
-        self.db = DB()
-
     # Release the video source when the object is destroyed
     def __del__(self):
         if self.vid.isOpened():
             self.vid.release()
-            self.window.mainloop()
 
     def get_frame(self):
         if self.vid.isOpened():
@@ -143,18 +150,20 @@ class DB:
         self.mariadb_connection.close()
 
     def query_str_builder(self, plates):
-        platesLength = len(plates)
-        plateQueryStr = ""
+        plates_length = len(plates)
+        plate_query_str = ""
         i = 1
         for plate in plates:
-            if i == platesLength:
-                plateQueryStr += "'" + plate + "'"
+            if i == plates_length:
+                plate_query_str += "'" + plate + "'"
             else:
-                plateQueryStr += "'" + plate + "', "
+                plate_query_str += "'" + plate + "', "
             i += 1
-        return plateQueryStr
+        print (plate_query_str)
+        return plate_query_str
 
     def db_check(self, plates):
+        alerts = []
         with closing(self.mariadb_connection.cursor()) as cursor:
             cursor.execute(
                 "SELECT * FROM placas WHERE placa IN ({})".format(self.query_str_builder(plates)))
@@ -162,9 +171,10 @@ class DB:
         if records:
             for row in records:
                 if row[5] == "Sospechoso":
-                    return "El auto con numero de placa {} es sospechoso".format(row[1])
+                    alerts.append("El auto con numero de placa {} es sospechoso".format(row[1]))
                 else:
-                    return "El auto con numero de placa {} es no sospechoso".format(row[1])
+                    alerts.append("El auto con numero de placa {} es no sospechoso".format(row[1]))
+            return alerts
 
     def results_filter(self, results):
         i = 0
@@ -186,46 +196,3 @@ class DB:
     
 
 App(tkinter.Tk(), "GBM ALPR", os.getenv("VIDEO_PATH"))
-
-'''
-STATUS = True
-
-
-
-
-
-def stream(frame):
-    frame_image = PhotoImage(Image.fromarray(frame))
-    vCanvas.create_image(50, 50, anchor = NE, image = frame_image)
-    vCanvas.pack()
-
-def start():
-    global STATUS
-    cap = cv2.VideoCapture(os.getenv("VIDEO_PATH"))
-    while STATUS == True:
-        STATUS, frame = cap.read()
-        stream(frame)
-        # openALPR Library part
-        results = alpr.recognize_ndarray(frame)
-        resultsCheck(results)
-
-def stop():
-    global STATUS
-    STATUS = False
-    alpr.unload()
-    mariadb_connection.close()
-    cap.release()
-    cv2.destroyAllWindows()
-
-#Tkinter setup
-top = Tk()
-top.geometry("1000x500")
-vCanvas = Canvas(top, bg = "black", height = 250, width = 500)
-
-
-if __name__ == "__main__":
-    start()
-    top.mainloop()
-'''    
-    
-
