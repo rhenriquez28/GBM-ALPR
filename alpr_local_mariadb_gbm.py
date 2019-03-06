@@ -11,6 +11,7 @@ import threading
 import time
 
 load_dotenv()
+suspect = False
 
 class App:
     def __init__(self, window, window_title, video_source):
@@ -38,7 +39,9 @@ class App:
         # Create a canvas that can fit the above video source size
         self.canvas = tkinter.Canvas(window, width = 960, height = 540, bg = "black")
         self.canvas.pack()
-        self.text = tkinter.Label(window, textvariable = self.result_text).pack()
+        tkinter.Label(window, text = "Resultados:", font = "Verdana 16 bold").pack()
+        self.text = tkinter.Label(window, textvariable = self.result_text, font = "Verdana 16 bold")
+        self.text.pack()
         self.start_btn = tkinter.Button(window, bg = "green", text = "Start", command = lambda:self.start_tasks()).pack()
         self.stop_btn = tkinter.Button(window, bg = "red", text = "Stop", command = lambda:self.stop_tasks()).pack()
 
@@ -88,12 +91,19 @@ class App:
     
     async def update_result(self):
         # Return a boolean success flag and the current frame converted to BGR
+        global suspect
         if self.ret:
             results = self.alpr.recognize_plate(self.frame)
-            alerts = self.db.results_check(results)
-            if alerts != None:
-                for alert in alerts:
-                    self.result_text.set(alert)
+            records = self.db.results_check(results)
+            if records != None:
+                for record in records:
+                    if suspect is True:
+                        self.text.config(fg = "red")
+                    else:
+                        self.text.config(fg = "black")
+                    
+                    self.result_text.set(record)
+                    time.sleep(2)
             else:
                 self.result_text.set("")
 
@@ -163,7 +173,8 @@ class DB:
         return plate_query_str
 
     def db_check(self, plates):
-        alerts = []
+        global suspect
+        result_records = []
         with closing(self.mariadb_connection.cursor()) as cursor:
             cursor.execute(
                 "SELECT * FROM placas WHERE placa IN ({})".format(self.query_str_builder(plates)))
@@ -171,10 +182,11 @@ class DB:
         if records:
             for row in records:
                 if row[5] == "Sospechoso":
-                    alerts.append("El auto con numero de placa {} es sospechoso".format(row[1]))
+                    suspect = True
                 else:
-                    alerts.append("El auto con numero de placa {} es no sospechoso".format(row[1]))
-            return alerts
+                    suspect = False
+                result_records.append("Placa: {}\n Marca: {} \n Modelo: {}\n Alerta: {}".format(row[1], row[3], row[4], row[5]))
+            return result_records
 
     def results_filter(self, results):
         i = 0
