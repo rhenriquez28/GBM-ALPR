@@ -11,7 +11,6 @@ import threading
 import time
 
 load_dotenv()
-suspect = False
 
 class App:
     def __init__(self, window, window_title, video_source):
@@ -91,12 +90,11 @@ class App:
     
     async def update_result(self):
         # Return a boolean success flag and the current frame converted to BGR
-        global suspect
         if self.ret:
-            results = self.alpr.recognize_plate(self.frame)
-            records = self.db.results_check(results)
-            if records != None:
-                for record in records:
+            results = await self.alpr.recognize_plate(self.frame)
+            records = await self.db.results_check(results)
+            if records is not None:
+                for record, suspect in records:
                     if suspect is True:
                         self.text.config(fg = "red")
                     else:
@@ -144,7 +142,7 @@ class ALPR:
     def __del__(self):
         self.alpr.unload()
     
-    def recognize_plate(self, frame):
+    async def recognize_plate(self, frame):
         return self.alpr.recognize_ndarray(frame)
         
 class DB:
@@ -159,7 +157,7 @@ class DB:
     def __del__(self):
         self.mariadb_connection.close()
 
-    def query_str_builder(self, plates):
+    async def query_str_builder(self, plates):
         plates_length = len(plates)
         plate_query_str = ""
         i = 1
@@ -172,12 +170,14 @@ class DB:
         print (plate_query_str)
         return plate_query_str
 
-    def db_check(self, plates):
-        global suspect
+    async def db_check(self, plates):
+        suspect = None
         result_records = []
+        query_str = await self.query_str_builder(plates)
+        print("SELECT * FROM placas WHERE placa IN ({})".format(query_str))
         with closing(self.mariadb_connection.cursor()) as cursor:
             cursor.execute(
-                "SELECT * FROM placas WHERE placa IN ({})".format(self.query_str_builder(plates)))
+                "SELECT * FROM placas WHERE placa IN ({})".format(query_str))
             records = cursor.fetchall()
         if records:
             for row in records:
@@ -185,10 +185,11 @@ class DB:
                     suspect = True
                 else:
                     suspect = False
-                result_records.append("Placa: {}\n Marca: {} \n Modelo: {}\n Alerta: {}".format(row[1], row[3], row[4], row[5]))
+                result_records.append(["Placa: {}\n Marca: {} \n Modelo: {}\n Alerta: {}"
+                    .format(row[1], row[3], row[4], row[5]), suspect])
             return result_records
 
-    def results_filter(self, results):
+    async def results_filter(self, results):
         i = 0
         plates = []
         for plate in results['results']:
@@ -198,11 +199,11 @@ class DB:
                 else:
                     #print("Plate #%d" % i + ": " + str(plate['plate']) + " " + str(plate['confidence']))
                     plates.append(plate['plate'])
-        return self.db_check(plates)
+        return await self.db_check(plates)
 
-    def results_check(self, results):
+    async def results_check(self, results):
         if results['results']:
-            return self.results_filter(results)
+            return await self.results_filter(results)
         else:
             pass
     
