@@ -170,16 +170,18 @@ class DB:
     async def db_check(self, plates):
         suspect = None
         result_records = []
-        query = Query(self.db, selector = { 'matricula': { "$in": plates } })
+        query = Query(self.db, selector = { 'placa': { "$in": plates } })
         if query():
             for doc in query()['docs']:
                 record = await Converter.json_to_dict(doc)
-                if record['alerta'] is not None:
+                if record['alerta'] != "":
                     suspect = True
+                    result_records.append(["Placa: {}\n Marca: {} \n Modelo: {}\n Alerta: {}"
+                                           .format(record['placa'], record['marca'], record['modelo'], record['alerta']), suspect])
                 else:
                     suspect = False
-                result_records.append(["Placa: {}\n Marca: {} \n Modelo: {}\n Alerta: {}"
-                    .format(record['matricula'], "Toyota", "Corolla", record['alerta']), suspect])
+                    result_records.append(["Placa: {}\n Marca: {} \n Modelo: {}"
+                        .format(record['placa'], record['marca'], record['modelo']), suspect])
         return result_records
 
     async def results_filter(self, results):
