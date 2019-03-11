@@ -181,12 +181,14 @@ class DB:
             records = cursor.fetchall()
         if records:
             for row in records:
-                if row[5] == "Sospechoso":
+                if row[5] != "":
                     suspect = True
+                    result_records.append(["Placa: {}\n Marca: {} \n Modelo: {}\n Alerta: {}"
+                    .format(row[1], row[3], row[4], row[5]), suspect])
                 else:
                     suspect = False
-                result_records.append(["Placa: {}\n Marca: {} \n Modelo: {}\n Alerta: {}"
-                    .format(row[1], row[3], row[4], row[5]), suspect])
+                result_records.append(["Placa: {}\n Marca: {} \n Modelo: {}"
+                    .format(row[1], row[3], row[4]), suspect])
             return result_records
 
     async def results_filter(self, results):
