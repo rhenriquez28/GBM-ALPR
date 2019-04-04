@@ -111,6 +111,8 @@ class App:
 
 class MyVideoCapture:
     def __init__(self, video_source):
+        if video_source.isdigit():
+            video_source = int(video_source)
         # Open the video source
         self.vid = cv2.VideoCapture(video_source)
         if not self.vid.isOpened():
@@ -207,4 +209,5 @@ class Converter:
     async def json_to_dict(self, json_str):
         return json.loads(json.dumps(json_str))
 
+#print(isinstance(, int))
 App(tkinter.Tk(), "GBM ALPR", os.getenv("VIDEO_PATH"))
