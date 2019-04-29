@@ -31,13 +31,14 @@ class App:
 
         self.ret = None
         self.frame = None
-        self.video_status = True
-        self.alpr_status = True
+        self.video_status = False
+        self.alpr_status = False
         self.alpr_thread = None
         self.result_text = tkinter.StringVar()
         # After it is called once, the update method will be automatically called every delay milliseconds
         self.delay = 1
         self.async_loop = asyncio.get_event_loop()
+        self.errors = []
 
         # Create a canvas that can fit the above video source size
         self.canvas = tkinter.Canvas(window, width = 960, height = 540, bg = "black")
@@ -45,47 +46,60 @@ class App:
         tkinter.Label(window, text = "Resultados:", font = "Verdana 16 bold").pack()
         self.text = tkinter.Label(window, textvariable = self.result_text, font = "Verdana 16 bold")
         self.text.pack()
-        self.start_btn = tkinter.Button(window, bg = "green", text = "Start", command = lambda:self.start_tasks()).pack()
-        self.stop_btn = tkinter.Button(window, bg = "red", text = "Stop", command = lambda:self.stop_tasks()).pack()
+        self.start_btn = tkinter.Button(window, bg = "green", text = "Start", command = self.start_tasks).pack()
+        self.stop_btn = tkinter.Button(window, bg = "red", text = "Stop", command = self.stop_tasks).pack()
 
         self.window.mainloop()
     
     def stop_tasks(self):
-        self.alpr_status = False
-        if self.async_loop.is_running():
-            self.async_loop.stop()
-        '''
-        if not self.alpr_thread.is_alive():
-            print("El thread se murio")
-        '''
-        #self.alpr_thread.join()
-        self.video_status = False
-        self.canvas.delete("all")
+        # Evita que se crashee el app si el usuario da clic en Stop de nuevo
+        if self.video_status is False and self.alpr_status is False:
+            pass
+        else:        
+            self.alpr_status = False
+            if self.async_loop.is_running():
+                self.async_loop.stop()
+            
+            self.alpr_thread.join()
+
+            self.video_status = False
+            self.canvas.delete("all")
         
 
     def _asyncio_thread(self):
-        self.async_loop.run_until_complete(self.do_alpr())
+        #print("toy haciendo alpr")
+        try:
+            self.async_loop.run_until_complete(self.do_alpr())
+        except Exception as e:
+            self.errors.append(e)
 
     def start_tasks(self):
-        self.video_status = True
-        self.alpr_status = True
-        self.update_video()
-        """ Button-Event-Handler starting the asyncio part. """
-        self.alpr_thread = threading.Thread(target=self._asyncio_thread)
-        self.alpr_thread.daemon = True
-        self.alpr_thread.start()
+        # Evita que se crashee el app si el usuario da clic en Start de nuevo
+        if self.video_status is True and self.alpr_status is True:
+            pass
+        else:
+            self.video_status = True
+            self.alpr_status = True
+            self.update_video()
+            """ Button-Event-Handler starting the asyncio part. """
+            self.alpr_thread = threading.Thread(target=self._asyncio_thread)
+            self.alpr_thread.daemon = True
+            self.alpr_thread.start()
+            #print(self.alpr_thread.is_alive())
 
     async def do_alpr(self):
+        print("toy aqui")
         while self.alpr_status and self.video_status:
             await self.update_result()
+            #self.alpr_thread.stop()
     
     def update_video(self):
         # Get a frame from the video source
         self.ret, self.frame = self.vid.get_frame()
         if self.ret:
-            resized_frame = cv2.resize(self.frame, None, fx = 0.5, fy = 0.5, interpolation = cv2.INTER_LINEAR)
+            resized_frame = cv2.resize(self.frame, (960, 540))
             self.photo = PIL.ImageTk.PhotoImage(image = PIL.Image.fromarray(resized_frame))
-            self.canvas.create_image(0, 0, image = self.photo, anchor = tkinter.NW)
+            self.canvas.create_image(0, 0, image=self.photo, anchor=tkinter.NW)
         else:
             self.video_status = False
 
@@ -95,10 +109,10 @@ class App:
     async def update_result(self):
         # Return a boolean success flag and the current frame converted to BGR
         if self.ret:
-            results = await self.alpr.recognize_plate(self.frame)
-            records = await self.db.results_check(results)
-            if records != None:
-                for record, suspect in records:
+            self.results = await self.alpr.recognize_plate(self.frame)
+            self.records = await self.db.results_check(self.results)
+            if self.records != None:
+                for record, suspect in self.records:
                     if suspect is True:
                         self.text.config(fg = "red")
                     else:
@@ -106,6 +120,7 @@ class App:
                     
                     self.result_text.set(record)
                     time.sleep(2)
+                    #self.alpr_thread.stop()
             else:
                 self.result_text.set("")
 
@@ -145,7 +160,7 @@ class ALPR:
     async def recognize_plate(self, frame):
         async with aiohttp.ClientSession() as session:
             async with session.post(self.alpr_url, data = self.convert_frame_to_bytes(frame)) as resp:
-                return await Converter.json_to_dict(await resp.json())
+                return Converter.json_to_dict(await resp.json())
     
     def convert_frame_to_bytes(self, frame):
         pil_im = PIL.Image.fromarray(frame)
@@ -170,12 +185,13 @@ class DB:
         self.client.disconnect()
 
     async def db_check(self, plates):
+        print("chequeando")
         suspect = None
         result_records = []
         query = Query(self.db, selector = { 'placa': { "$in": plates } })
         if query():
             for doc in query()['docs']:
-                record = await Converter.json_to_dict(doc)
+                record = Converter.json_to_dict(doc)
                 if record['alerta'] != "":
                     suspect = True
                     result_records.append(["Placa: {}\n Marca: {} \n Modelo: {}\n Alerta: {}"
@@ -206,7 +222,7 @@ class DB:
     
 class Converter:
     @classmethod
-    async def json_to_dict(self, json_str):
+    def json_to_dict(self, json_str):
         return json.loads(json.dumps(json_str))
 
 #print(isinstance(, int))
