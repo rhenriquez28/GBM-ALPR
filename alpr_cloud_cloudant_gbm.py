@@ -69,9 +69,26 @@ class App:
     def _asyncio_thread(self):
         #print("toy haciendo alpr")
         try:
-            self.async_loop.run_until_complete(self.do_alpr())
+            while self.alpr_status and self.video_status:
+                self.results = self.async_loop.run_until_complete(
+                    self.alpr.recognize_plate(self.frame))
+                self.records = self.async_loop.run_until_complete(
+                    self.db.results_check(self.results))
+                if self.records != None:
+                    for record, suspect in self.records:
+                        if suspect is True:
+                            self.text.config(fg="red")
+                        else:
+                            self.text.config(fg="black")
+
+                        self.result_text.set(record)
+                        time.sleep(2)
+                        #self.alpr_thread.stop()
+                else:
+                    self.result_text.set("")
         except Exception as e:
             self.errors.append(e)
+            print(self.errors)
 
     def start_tasks(self):
         # Evita que se crashee el app si el usuario da clic en Start de nuevo
@@ -86,12 +103,6 @@ class App:
             self.alpr_thread.daemon = True
             self.alpr_thread.start()
             #print(self.alpr_thread.is_alive())
-
-    async def do_alpr(self):
-        print("toy aqui")
-        while self.alpr_status and self.video_status:
-            await self.update_result()
-            #self.alpr_thread.stop()
     
     def update_video(self):
         # Get a frame from the video source
@@ -105,24 +116,6 @@ class App:
 
         if self.video_status:
             self.window.after(self.delay, self.update_video)
-    
-    async def update_result(self):
-        # Return a boolean success flag and the current frame converted to BGR
-        if self.ret:
-            self.results = await self.alpr.recognize_plate(self.frame)
-            self.records = await self.db.results_check(self.results)
-            if self.records != None:
-                for record, suspect in self.records:
-                    if suspect is True:
-                        self.text.config(fg = "red")
-                    else:
-                        self.text.config(fg = "black")
-                    
-                    self.result_text.set(record)
-                    time.sleep(2)
-                    #self.alpr_thread.stop()
-            else:
-                self.result_text.set("")
 
 class MyVideoCapture:
     def __init__(self, video_source):
