@@ -10,7 +10,6 @@ from cloudant.query import Query
 # To use ImageTk you need to run dnf install python3-pillow-tk or apt-get install python3-pil.imagetk
 import PIL.Image, PIL.ImageTk
 from dotenv import load_dotenv
-import asyncio, aiohttp
 import requests
 import threading
 import time
@@ -29,12 +28,16 @@ class App:
         
         # open video source
         self.vid = MyVideoCapture(video_source)
-
+        self.first_start = False
         self.ret = None
         self.frame = None
         self.video_status = False
         self.alpr_status = False
-        self.alpr_thread = None
+        self.alpr_thread = threading.Thread(target=self.do_alpr)
+        self.alpr_thread_done = threading.Event()
+        self.alpr_thread_can_run = threading.Event()
+        self.alpr_thread_done.set()
+        self.alpr_thread_can_run.set()
         self.result_text = tkinter.StringVar()
         # After it is called once, the update method will be automatically called every delay milliseconds
         self.delay = 1
@@ -52,69 +55,45 @@ class App:
 
         self.window.mainloop()
     
-    def stop_tasks(self):
-        # Evita que se crashee el app si el usuario da clic en Stop de nuevo
-        if self.video_status is False and self.alpr_status is False:
-            pass
-        else:        
-            self.alpr_status = False
-            self.video_status = False
-            '''
-            if self.async_loop.is_running():
-                self.async_loop.stop()
-            '''
-            #need to fix the closure of the thread
+    def __del__(self):
+        if self.alpr_thread.is_alive():
             self.alpr_thread.join()
-            self.canvas.delete("all")
-        
-
-    def _asyncio_thread(self):
-        #print("toy haciendo alpr")
-        while self.alpr_status and self.video_status:
-            self.results = self.alpr.recognize_plate(self.frame)
-            self.records = self.db.results_check(self.results)
-            #self.results = self.async_loop.run_until_complete(
-                #   self.alpr.recognize_plate(self.frame))
-            #self.records = self.async_loop.run_until_complete(
-                #   self.db.results_check(self.results))
-            if self.records != None:
-                for record, suspect in self.records:
-                    if suspect is True:
-                        self.text.config(fg="red")
-                    else:
-                        self.text.config(fg="black")
-
-                    self.result_text.set(record)
-                    time.sleep(2)
-                    #self.alpr_thread.stop()
-            else:
-                self.result_text.set("")
-        '''            
-        except Exception as e:
-            self.errors.append(e)
-            print(self.errors)
-            '''
 
     def start_tasks(self):
         # Evita que se crashee el app si el usuario da clic en Start de nuevo
         if self.video_status is True and self.alpr_status is True:
             pass
-        else:
-            self.video_status = True
-            self.alpr_status = True
-            self.update_video()
-            """ Button-Event-Handler starting the asyncio part. """
-            self.alpr_thread = threading.Thread(target=self._asyncio_thread)
-            self.alpr_thread.daemon = True
+        elif not self.first_start:
+            self.first_start = True
+            self.start_process()
             self.alpr_thread.start()
-            #print(self.alpr_thread.is_alive())
+        else:
+            self.resume_alpr()
+            self.start_process()
+    
+    def start_process(self):
+        self.video_status = True
+        self.alpr_status = True
+        self.update_video()
+    
+    def stop_tasks(self):
+        # Evita que se crashee el app si el usuario da clic en Stop de nuevo
+        if self.video_status is False and self.alpr_status is False:
+            pass
+        else:
+            #need to fix the closure of the thread
+            self.pause_alpr()
+            self.alpr_status = False
+            self.video_status = False
+            self.canvas.delete("all")
     
     def update_video(self):
         # Get a frame from the video source
         self.ret, self.frame = self.vid.get_frame()
         if self.ret:
             resized_frame = cv2.resize(self.frame, (960, 540))
-            self.photo = PIL.ImageTk.PhotoImage(image = PIL.Image.fromarray(resized_frame))
+            self.photo = PIL.ImageTk.PhotoImage(
+                image=PIL.Image.fromarray(resized_frame))
             self.canvas.create_image(0, 0, image=self.photo, anchor=tkinter.NW)
         else:
             self.video_status = False
@@ -122,6 +101,34 @@ class App:
         if self.video_status:
             self.window.after(self.delay, self.update_video)
 
+    def do_alpr(self):
+        while self.alpr_status and self.video_status:
+            self.alpr_thread_can_run.wait()
+            try:
+                self.alpr_thread_done.clear()
+                self.results = self.alpr.recognize_plate(self.frame)
+                self.records = self.db.results_check(self.results)
+                if self.records != None:
+                    for record, suspect in self.records:
+                        if suspect is True:
+                            self.text.config(fg="red")
+                        else:
+                            self.text.config(fg="black")
+
+                        self.result_text.set(record)
+                        time.sleep(2)
+                else:
+                    self.result_text.set("")
+            finally:
+                self.alpr_thread_done.set()
+    
+    def pause_alpr(self):
+        self.alpr_thread_can_run.clear()
+        self.alpr_thread_done.wait()
+    
+    def resume_alpr(self):
+        self.alpr_thread_can_run.set()
+    
 class MyVideoCapture:
     def __init__(self, video_source):
         if video_source.isdigit():
@@ -158,12 +165,7 @@ class ALPR:
     def recognize_plate(self, frame):
         with requests.post(self.alpr_url, data=self.convert_frame_to_bytes(frame)) as resp:
             return Converter.json_to_dict(resp.json())
-    '''
-    async def recognize_plate(self, frame):
-        async with aiohttp.ClientSession() as session:
-            async with session.post(self.alpr_url, data = self.convert_frame_to_bytes(frame)) as resp:
-                return Converter.json_to_dict(await resp.json())
-    '''
+
     def convert_frame_to_bytes(self, frame):
         pil_im = PIL.Image.fromarray(frame)
         stream = BytesIO()
@@ -220,6 +222,7 @@ class DB:
         if results['error']:
             print("Error code: {}, {}".format(
                 results['error_code'], results['error']))
+            sys.exit(1)
         elif results['results']:
             return self.results_filter(results)
         else:
