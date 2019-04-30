@@ -11,6 +11,7 @@ from cloudant.query import Query
 import PIL.Image, PIL.ImageTk
 from dotenv import load_dotenv
 import asyncio, aiohttp
+import requests
 import threading
 import time
 
@@ -37,7 +38,7 @@ class App:
         self.result_text = tkinter.StringVar()
         # After it is called once, the update method will be automatically called every delay milliseconds
         self.delay = 1
-        self.async_loop = asyncio.get_event_loop()
+        #self.async_loop = asyncio.get_event_loop()
         self.errors = []
 
         # Create a canvas that can fit the above video source size
@@ -57,38 +58,42 @@ class App:
             pass
         else:        
             self.alpr_status = False
+            self.video_status = False
+            '''
             if self.async_loop.is_running():
                 self.async_loop.stop()
-            
+            '''
+            #need to fix the closure of the thread
             self.alpr_thread.join()
-
-            self.video_status = False
             self.canvas.delete("all")
         
 
     def _asyncio_thread(self):
         #print("toy haciendo alpr")
-        try:
-            while self.alpr_status and self.video_status:
-                self.results = self.async_loop.run_until_complete(
-                    self.alpr.recognize_plate(self.frame))
-                self.records = self.async_loop.run_until_complete(
-                    self.db.results_check(self.results))
-                if self.records != None:
-                    for record, suspect in self.records:
-                        if suspect is True:
-                            self.text.config(fg="red")
-                        else:
-                            self.text.config(fg="black")
+        while self.alpr_status and self.video_status:
+            self.results = self.alpr.recognize_plate(self.frame)
+            self.records = self.db.results_check(self.results)
+            #self.results = self.async_loop.run_until_complete(
+                #   self.alpr.recognize_plate(self.frame))
+            #self.records = self.async_loop.run_until_complete(
+                #   self.db.results_check(self.results))
+            if self.records != None:
+                for record, suspect in self.records:
+                    if suspect is True:
+                        self.text.config(fg="red")
+                    else:
+                        self.text.config(fg="black")
 
-                        self.result_text.set(record)
-                        time.sleep(2)
-                        #self.alpr_thread.stop()
-                else:
-                    self.result_text.set("")
+                    self.result_text.set(record)
+                    time.sleep(2)
+                    #self.alpr_thread.stop()
+            else:
+                self.result_text.set("")
+        '''            
         except Exception as e:
             self.errors.append(e)
             print(self.errors)
+            '''
 
     def start_tasks(self):
         # Evita que se crashee el app si el usuario da clic en Start de nuevo
@@ -150,11 +155,15 @@ class ALPR:
         # openALPR library part
         self.alpr_url = "https://api.openalpr.com/v2/recognize_bytes?recognize_vehicle=1&country=us&secret_key=%s" % (os.getenv("OPENALPR_SECRET_KEY")) 
     
+    def recognize_plate(self, frame):
+        with requests.post(self.alpr_url, data=self.convert_frame_to_bytes(frame)) as resp:
+            return Converter.json_to_dict(resp.json())
+    '''
     async def recognize_plate(self, frame):
         async with aiohttp.ClientSession() as session:
             async with session.post(self.alpr_url, data = self.convert_frame_to_bytes(frame)) as resp:
                 return Converter.json_to_dict(await resp.json())
-    
+    '''
     def convert_frame_to_bytes(self, frame):
         pil_im = PIL.Image.fromarray(frame)
         stream = BytesIO()
@@ -177,7 +186,7 @@ class DB:
     def __del__(self):
         self.client.disconnect()
 
-    async def db_check(self, plates):
+    def db_check(self, plates):
         print("chequeando")
         suspect = None
         result_records = []
@@ -195,7 +204,7 @@ class DB:
                         .format(record['placa'], record['marca'], record['modelo']), suspect])
         return result_records
 
-    async def results_filter(self, results):
+    def results_filter(self, results):
         i = 0
         plates = []
         for plate in results['results']:
@@ -205,11 +214,14 @@ class DB:
                 else:
                     #print("Plate #%d" % i + ": " + str(plate['plate']) + " " + str(plate['confidence']))
                     plates.append(plate['plate'])
-        return await self.db_check(plates)
+        return self.db_check(plates)
 
-    async def results_check(self, results):
-        if results['results']:
-            return await self.results_filter(results)
+    def results_check(self, results):
+        if results['error']:
+            print("Error code: {}, {}".format(
+                results['error_code'], results['error']))
+        elif results['results']:
+            return self.results_filter(results)
         else:
             pass
     
