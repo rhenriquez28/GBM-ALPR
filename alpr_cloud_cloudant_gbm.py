@@ -31,13 +31,18 @@ class App:
         self.first_start = False
         self.ret = None
         self.frame = None
+        #self.records = list()
         self.video_status = False
         self.alpr_status = False
         self.alpr_thread = threading.Thread(target=self.do_alpr)
+        self.paused = False
+        self.pause_cond = threading.Condition(threading.Lock())
+        '''
         self.alpr_thread_done = threading.Event()
         self.alpr_thread_can_run = threading.Event()
         self.alpr_thread_done.set()
         self.alpr_thread_can_run.set()
+        '''
         self.result_text = tkinter.StringVar()
         # After it is called once, the update method will be automatically called every delay milliseconds
         self.delay = 1
@@ -57,6 +62,7 @@ class App:
     
     def __del__(self):
         if self.alpr_thread.is_alive():
+            self.stop_process()
             self.alpr_thread.join()
 
     def start_tasks(self):
@@ -74,7 +80,7 @@ class App:
     def start_process(self):
         self.video_status = True
         self.alpr_status = True
-        self.update_video()
+        self.update_GUI()
     
     def stop_tasks(self):
         # Evita que se crashee el app si el usuario da clic en Stop de nuevo
@@ -83,10 +89,17 @@ class App:
         else:
             #need to fix the closure of the thread
             self.pause_alpr()
-            self.alpr_status = False
-            self.video_status = False
+            self.stop_process()
             self.canvas.delete("all")
     
+    def stop_process(self):
+        self.video_status = False
+        self.alpr_status = False
+
+    def update_GUI(self):
+        self.update_video()
+        self.update_results()
+
     def update_video(self):
         # Get a frame from the video source
         self.ret, self.frame = self.vid.get_frame()
@@ -100,34 +113,47 @@ class App:
 
         if self.video_status:
             self.window.after(self.delay, self.update_video)
+    
+    def update_results(self):
+        while self.alpr_status and self.video_status:
+            if self.records != None:
+                for record, suspect in self.records:
+                    if suspect is True:
+                        self.text.config(fg="red")
+                    else:
+                        self.text.config(fg="black")
+
+                    self.result_text.set(record)
+                    time.sleep(2)
+                self.records = []
+            else:
+                self.result_text.set("")
 
     def do_alpr(self):
         while self.alpr_status and self.video_status:
-            self.alpr_thread_can_run.wait()
-            try:
-                self.alpr_thread_done.clear()
+            with self.pause_cond:
+                while self.paused:
+                    self.pause_cond.wait()   
+            #self.alpr_thread_can_run.wait()
+            #try:
+                #self.alpr_thread_done.clear()
                 self.results = self.alpr.recognize_plate(self.frame)
-                self.records = self.db.results_check(self.results)
-                if self.records != None:
-                    for record, suspect in self.records:
-                        if suspect is True:
-                            self.text.config(fg="red")
-                        else:
-                            self.text.config(fg="black")
-
-                        self.result_text.set(record)
-                        time.sleep(2)
-                else:
-                    self.result_text.set("")
-            finally:
-                self.alpr_thread_done.set()
+                self.records.extend(self.db.results_check(self.results))
+        return 0
+            #finally:
+            #    self.alpr_thread_done.set()
     
     def pause_alpr(self):
-        self.alpr_thread_can_run.clear()
-        self.alpr_thread_done.wait()
+        #self.alpr_thread_can_run.clear()
+        #self.alpr_thread_done.wait()
+        self.paused = True
+        self.pause_cond.acquire()
     
     def resume_alpr(self):
-        self.alpr_thread_can_run.set()
+        #self.alpr_thread_can_run.set()
+        self.paused = False
+        self.pause_cond.notify()
+        self.pause_cond.release()
     
 class MyVideoCapture:
     def __init__(self, video_source):
