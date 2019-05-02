@@ -34,10 +34,8 @@ class App:
         self.video_status = False
         self.alpr_status = False
         self.alpr_thread = threading.Thread(target=self.do_alpr)
-        self.alpr_thread_done = threading.Event()
-        self.alpr_thread_can_run = threading.Event()
-        self.alpr_thread_done.set()
-        self.alpr_thread_can_run.set()
+        self.paused = False
+        self.pause_cond = threading.Condition(threading.Lock())
         self.result_text = tkinter.StringVar()
         # After it is called once, the update method will be automatically called every delay milliseconds
         self.delay = 1
@@ -103,9 +101,9 @@ class App:
 
     def do_alpr(self):
         while self.alpr_status and self.video_status:
-            self.alpr_thread_can_run.wait()
-            try:
-                self.alpr_thread_done.clear()
+            with self.pause_cond:
+                while self.paused:
+                    self.pause_cond.wait()
                 self.results = self.alpr.recognize_plate(self.frame)
                 self.records = self.db.results_check(self.results)
                 if self.records != None:
@@ -119,15 +117,15 @@ class App:
                         time.sleep(2)
                 else:
                     self.result_text.set("")
-            finally:
-                self.alpr_thread_done.set()
-    
+
     def pause_alpr(self):
-        self.alpr_thread_can_run.clear()
-        self.alpr_thread_done.wait()
+        self.paused = True
+        self.pause_cond.acquire()
     
     def resume_alpr(self):
-        self.alpr_thread_can_run.set()
+        self.paused = False
+        self.pause_cond.notify()
+        self.pause_cond.release()
     
 class MyVideoCapture:
     def __init__(self, video_source):
