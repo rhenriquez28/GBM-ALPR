@@ -56,7 +56,8 @@ class App:
     def __del__(self):
         if self.alpr_thread.is_alive():
             self.alpr_thread.join()
-
+        self.canvas.delete("all")
+        
     def start_tasks(self):
         # Evita que se crashee el app si el usuario da clic en Start de nuevo
         if self.video_status is True and self.alpr_status is True:
@@ -83,7 +84,6 @@ class App:
             self.pause_alpr()
             self.alpr_status = False
             self.video_status = False
-            self.canvas.delete("all")
     
     def update_video(self):
         # Get a frame from the video source
